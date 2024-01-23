@@ -1,0 +1,59 @@
+## REPLACE file name and path at the export-csv line
+
+Write-Host "Welcome to AD audit tool"
+
+$UserList = New-Object -TypeName 'System.Collections.ArrayList'
+
+$DCs = (Get-ADDomainController -filter * | Sort-Object name).name
+
+$d = [DateTime]::Today.AddDays(-180)
+
+Foreach ($DC in $DCs){
+
+$users = Get-ADUser -Filter '(PasswordLastSet -lt $d) -or (LastLogonTimestamp -lt $d)' -Properties PasswordLastSet,LastLogonTimestamp,lastlogon -server $dc
+
+$i = 0
+
+    Foreach ($user in $users){
+
+    $i=$i + 1
+
+    $count = ($users.count - $i)
+
+    Write-Host "Remaining " $count
+
+        if ($user.lastlogon -ne $NULL){
+
+        $lastlogonpre = w32tm /ntte $user.lastlogon
+
+        $lastlogon = $lastlogonpre.substring(26)
+
+        Write-Host $user $DC $lastlogon
+
+            If($UserList.Indexof($user.name) -ge 0){
+
+            $index = $UserList.Indexof($user.name)
+
+            $UserList[$index] = $user.Name + ';' + $lastlogon + ';' + $DC
+
+            }else{
+
+            $UserList.Add($user.Name + ';' + $lastlogon + ';' + $DC)
+            
+            }
+
+        }else{
+
+              $lastlogon = w32tm /ntte $user.lastlogon
+              Write-Host $user $DC "No logon date"
+              $Userlist.add($user.Name + ';' + $DC)
+
+             }
+
+        }
+
+     }
+
+Foreach ($arr in $UserList) {
+      $arr -join ',' | Add-Content "$path"
+} 
