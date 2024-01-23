@@ -1,0 +1,150 @@
+#################### REPLACE file name and path at the export-csv line and the DOMAIN pattern
+
+
+## Creates both tables, one for the log data and one for the folder data
+
+$table = New-Object System.Data.DataTable
+$table.Columns.Add("Carpeta")
+$table.Columns.Add("Archivo")
+$table.Columns.Add("Fecha")
+$table.Columns.Add("Usuario")
+$table.Columns.Add("IP Origen")
+$table.Columns.Add("Directorio")
+$table.Columns.Add("Permisos")
+
+$tfolder = New-Object System.Data.DataTable
+$tfolder.Columns.Add("Nombre")
+$tfolder.Columns.Add("Permisos")
+
+## Gets the folders in the directory
+
+$carpetas = Get-ChildItem C:\inetpub\logs\LogFiles
+
+## Goes through the folders and gets the permissions and files in that forlder
+## With the permissions, it complets the folder data table. In each file, it looks if the file last write time was after the set date, if it is, then it goes line by line, looking for user, originating ip, directory and date, pushes the data to the table variable.
+## The log files hold 2 different ways of addressing a user, @domain and Domain\, both conditionals address the situation
+
+Foreach ($carpeta in $carpetas){
+
+    $archivos = Get-ChildItem "C:\inetpub\logs\LogFiles\$carpeta"
+
+    $permisos = (Get-Acl C:\inetpub\logs\LogFiles\$carpeta).Access
+
+    foreach ($perm in $permisos){ 
+    
+    
+    $preperm += $perm.IdentityReference.ToString() + ',' + $perm.AccessControlType.ToString() + ',' + $perm.FileSystemRights.ToString() + "`n" 
+    
+    $r1 = $tfolder.NewRow()
+    $r1.Nombre = $carpeta
+    $r1.Permisos = $preperm
+        
+    }
+    
+    ForEach ($archivo in $archivos){
+
+        if($archivo.LastWriteTime.Year -ge 2023){
+
+        $lineas = Get-Content "C:\inetpub\logs\LogFiles\$carpeta\$archivo"
+
+        $count = $lineas.Count
+
+            Foreach ($linea in $lineas){
+
+                $count -= 1
+
+                Write-Host "Se esta parseando el archivo $archivo, quedan $count lineas"
+
+                if ($linea | Select-String -Pattern 'USER'){
+
+                    $iporigen = $linea.Substring(20,13)
+
+                    $user = $linea.Substring(55)
+
+                    $usuario = $user.Substring(0,$user.Length-55)
+
+                    $fecha = $linea.Substring(0,19)
+
+                    $r = $table.NewRow()
+                    $r.Archivo = $archivo
+                    $r.Carpeta = $carpeta
+                    $r.Fecha = $fecha
+                    $r.Usuario = $user
+                    $r.'IP Origen' = $iporigen
+
+                    if (($linea.LastIndexOf("/") -ge 120) -and ($linea.IndexOf('/ 250') -le 0)){
+
+                        $ind = $linea.LastIndexOf("/")
+
+                        $directorio = $linea.Substring($ind)
+
+                    }
+
+                    if ($directorio){
+
+                        $r.Directorio = $directorio
+                        $table.Rows.Add($r)
+
+                        Write-Host $usuario $fecha $directorio $iporigen
+
+                        Clear-Variable directorio
+
+                    }else{
+
+                        $table.Rows.Add($r)
+                        Write-Host $usuario $fecha
+
+                    }
+                }elseif($linea | Select-String -Pattern '"DOMAIN"'){
+
+                    $fin = $linea.IndexOf('10.166.4.171') - 33 - 1
+
+                    $user = $linea.Substring(33,$fin)
+
+                    $fecha = $linea.Substring(0,19)
+
+                    $iporigen = $linea.Substring(20,13)
+
+                    $r = $table.NewRow()
+                    $r.Archivo = $archivo
+                    $r.Carpeta = $carpeta
+                    $r.Fecha = $fecha
+                    $r.Usuario = $user
+                    $r.'IP Origen' = $iporigen
+
+                    if (($linea.LastIndexOf("/") -ge 120) -and ($linea.IndexOf('/ 250') -le 0)){
+
+                        $ind = $linea.LastIndexOf("/")
+
+                        $directorio = $linea.Substring($ind)
+
+                    }
+
+                    if ($directorio){
+
+                        $r.Directorio = $directorio
+                        $table.Rows.Add($r)
+
+                        Write-Host $user $fecha $directorio $iporigen
+
+                        Clear-Variable directorio
+
+                    }else{
+
+                        $table.Rows.Add($r)
+
+                        Write-Host $user $fecha
+
+                    }
+
+                }
+
+
+            }
+
+        }
+   }
+}
+
+$tfolder | export-csv $path\$file -NoTypeInformation -NoClobber -Delimiter ";"
+$table | export-csv $path\$file -NoTypeInformation -NoClobber -Delimiter ";"
